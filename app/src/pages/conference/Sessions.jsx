@@ -22,7 +22,7 @@ const SESSIONS_ATTRIBUTES = gql`
 `;
 
 const CREATE_SESSION = gql`
-  mutation createSession($session: SessionInput!) {
+  mutation createSession($session: SessionInput!, $isDescription: Boolean = true) {
     createSession(session: $session) {
       ...SessionInfo
     }
@@ -46,16 +46,22 @@ const SESSIONS = gql`
 `;
 
 const ALL_SESSIONS = gql`
-  query getSessions {
+  query getSessions($isDescription: Boolean = true) {
     sessions {
       ...SessionInfo
     }
   }
+  ${SESSIONS_ATTRIBUTES}
 `;
 
 function AllSessionList() {
    /* ---> Invoke useQuery hook here to retrieve all sessions and call SessionItem */
-   return <SessionItem />
+   const { loading, error, data } = useQuery(ALL_SESSIONS);
+  if (loading) return <p>Loading Sessions...</p>
+  if (error) return <p>Error Loading Sessions!</p>
+  return data.sessions.map(session => (
+    <SessionItem session={session} key={session.id} />
+  ))
 }
 
 function SessionList ({ day }) {
@@ -98,7 +104,7 @@ function SessionList ({ day }) {
   return results;
 }
 
-function SessionItem({ session }) {
+function SessionItem({ session = {} }) {
   const { id, title, day, level, room, startsAt, description, speakers } = session;
   /* ---> Replace hard coded session values with data that you get back from GraphQL server here */
   return (
@@ -160,7 +166,8 @@ export function Sessions() {
               Friday
             </button >
           </div>
-          {<SessionList day={day} />}
+          { day !== 'All' && <SessionList day={day} />}
+          { day === 'All' && <AllSessionList /> }
         </div>
       </section>
     </>
@@ -179,14 +186,14 @@ export function SessionForm() {
           cache.writeQuery({
             query: ALL_SESSIONS,
             data: { newSession, ...existingSessions }
-          })
+          });
         }
       }
     })
   }
 
   /* ---> Call useMutation hook here to create new session and update cache */
-  const [create, { called, error }, data] = useMutation(CREATE_SESSION, {
+  const [create, { called, error }] = useMutation(CREATE_SESSION, {
     update: updateSessions
   });
 
