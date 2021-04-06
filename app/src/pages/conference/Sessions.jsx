@@ -1,36 +1,130 @@
-import React, {useState} from "react";  
+import React, {useState} from "react";
 import "./style-sessions.css";
+import { gql, useQuery, useMutation } from "@apollo/client"
 import { Link } from "react-router-dom"
 import { Formik, Field, Form } from "formik"
 
 /* ---> Define queries, mutations and fragments here */
+const SESSIONS_ATTRIBUTES = gql`
+  fragment SessionInfo on Session {
+    id
+    title
+    day
+    room
+    level
+    description @include(if: $isDescription)
+    startsAt
+    speakers {
+      id
+      name
+    }
+  }
+`;
+
+const CREATE_SESSION = gql`
+  mutation createSession($session: SessionInput!) {
+    createSession(session: $session) {
+      ...SessionInfo
+    }
+  }
+  ${SESSIONS_ATTRIBUTES}
+`;
+
+const SESSIONS = gql`
+  query sessions($day: String!, $isDescription: Boolean!) {
+    intro: sessions(day: $day, level: "Introductory and overview") {
+      ...SessionInfo
+    }
+    intermediate: sessions(day: $day, level: "Intermediate") {
+      ...SessionInfo
+    }
+    advanced: sessions(day: $day, level: "Advanced") {
+      ...SessionInfo
+    }
+  }
+  ${SESSIONS_ATTRIBUTES}
+`;
+
+const ALL_SESSIONS = gql`
+  query getSessions {
+    sessions {
+      ...SessionInfo
+    }
+  }
+`;
 
 function AllSessionList() {
    /* ---> Invoke useQuery hook here to retrieve all sessions and call SessionItem */
    return <SessionItem />
 }
 
-function SessionList () {
+function SessionList ({ day }) {
   /* ---> Invoke useQuery hook here to retrieve sessions per day and call SessionItem */
-  return <SessionItem />
+  // The second argument to useQuery is to pass in variables which is expected as an object
+  if (day === '') day = "Wednesday";
+  let isDescription = true;
+  const { loading, error, data } = useQuery(SESSIONS, {variables: {day, isDescription}});
+  if (loading) return <p>Loading Sessions...</p>;
+  if (error) return <p>Error Loading Sessions!</p>;
+
+  const results = [];
+  results.push(data.intro.map((session) => (
+    <SessionItem
+      key={session.id}
+      session={{
+        ...session
+      }}
+  />
+  )));
+
+  results.push(data.intermediate.map((session) => (
+    <SessionItem
+      key={session.id}
+      session={{
+        ...session
+      }}
+  />
+  )));
+
+  results.push(data.advanced.map((session) => (
+    <SessionItem
+      key={session.id}
+      session={{
+        ...session
+      }}
+  />
+  )));
+
+  return results;
 }
 
-function SessionItem() {
-
+function SessionItem({ session }) {
+  const { id, title, day, level, room, startsAt, description, speakers } = session;
   /* ---> Replace hard coded session values with data that you get back from GraphQL server here */
   return (
-    <div key={'id'} className="col-xs-12 col-sm-6" style={{ padding: 5 }}>
+    <div key={id} className="col-xs-12 col-sm-6" style={{ padding: 5 }}>
       <div className="panel panel-default">
         <div className="panel-heading">
-          <h3 className="panel-title">{"title"}</h3>
-          <h5>{`Level: `}</h5>
+          <h3 className="panel-title">{title}</h3>
+          <h5>{`Level: ${level}`}</h5>
         </div>
         <div className="panel-body">
-          <h5>{`Day: `}</h5>
-          <h5>{`Room Number: `}</h5>
-          <h5>{`Starts at: `}</h5>
+          <h5>{`Day: ${day}`}</h5>
+          <h5>{`Room Number: ${room}`}</h5>
+          <h5>{`Starts at: ${startsAt}`}</h5>
+          {description && <h5>{description}</h5>}
         </div>
         <div className="panel-footer">
+          {speakers.map(({ id, name }) => (
+            <span key={id} style={{ padding: 2 }}>
+              <Link
+                className="btn btn-default btn-lg"
+                to={`/conference/speaker/${id}`}
+                >
+                  View {name}'s Profile
+              </Link>
+            </span>
+          ))}
         </div>
       </div>
     </div>
@@ -44,13 +138,13 @@ export function Sessions() {
     <>
       <section className="banner">
         <div className="container">
-        <div className="row" style={{ padding: 10 }}>	
-            <Link	
-              className="btn btn-lg center-block"	
-              to={`/conference/sessions/new`}	
-            >	
-              Submit a Session!	
-            </Link>	
+        <div className="row" style={{ padding: 10 }}>
+            <Link
+              className="btn btn-lg center-block"
+              to={`/conference/sessions/new`}
+            >
+              Submit a Session!
+            </Link>
           </div>
           <div className="row">
           <button type="button" onClick={() => setDay('All')} className="btn-oval">
@@ -66,100 +160,122 @@ export function Sessions() {
               Friday
             </button >
           </div>
-          { day !== 'All' && <SessionList day={day} />}
-          { day === 'All' && <AllSessionList /> }
+          {<SessionList day={day} />}
         </div>
       </section>
     </>
   );
 }
 
-export function SessionForm() {	
+export function SessionForm() {
+
+  // Gets called once the `create` function as part of CREATE_SESSION useMutation is finished executing.
+  // Modifies the cache to include the updated data
+  const updateSessions = (cache, { data }) => {
+    cache.modify({
+      fields: {
+        sessions(existingSessions = []) {
+          const newSession = data.createSession;
+          cache.writeQuery({
+            query: ALL_SESSIONS,
+            data: { newSession, ...existingSessions }
+          })
+        }
+      }
+    })
+  }
 
   /* ---> Call useMutation hook here to create new session and update cache */
+  const [create, { called, error }, data] = useMutation(CREATE_SESSION, {
+    update: updateSessions
+  });
 
-  return (	
-    <div	
-      style={{	
-        width: "100%",	
-        display: "flex",	
-        alignContent: "center",	
-        justifyContent: "center",	
-        padding: 10,	
-      }}	
-    >	
-      <Formik	
-        initialValues={{	
-          title: "",	
-          description: "",	
-          day: "",	
-          level: "",	
-        }}	
-        onSubmit={() => {
+  if (called) return <p>Session Submitted Successfully!</p>
+  if (error) return <p>Error Submitting Session...</p>
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        display: "flex",
+        alignContent: "center",
+        justifyContent: "center",
+        padding: 10,
+      }}
+    >
+      <Formik
+        initialValues={{
+          title: "",
+          description: "",
+          day: "",
+          level: "",
+        }}
+        onSubmit={(values) => {
           /* ---> Call useMutation mutate function here to create new session */
-        }}	
-      >	
-        {() => (	
-          <Form style={{ width: "100%", maxWidth: 500 }}>	
-            <h3 className="h3 mb-3 font-weight-normal">Submit a Session!</h3>	
-            <div className="mb-3" style={{ paddingBottom: 5 }}>	
-              <label htmlFor="inputTitle">Title</label>	
-              <Field	
-                id="inputTitle"	
-                className="form-control"	
-                required	
-                autoFocus	
-                name="title"	
-              />	
-            </div>	
-            <div className="mb-3" style={{ paddingBottom: 5 }}>	
-              <label htmlFor="inputDescription">Description</label>	
-              <Field	
-                type="textarea"	
-                id="inputDescription"	
-                className="form-control"	
-                required	
-                name="description"	
-              />	
-            </div>	
-            <div className="mb-3" style={{ paddingBottom: 5 }}>	
-              <label htmlFor="inputDay">Day</label>	
-              <Field	
-                name="day"	
-                id="inputDay"	
-                className="form-control"	
-                required	
-              />	
-            </div>	
-            <div className="mb-3" style={{ paddingBottom: 5 }}>	
-              <label htmlFor="inputLevel">Level</label>	
-              <Field	
-                name="level"	
-                id="inputLevel"	
-                className="form-control"	
-                required	
-              />	
-            </div>	
-            <div style={{ justifyContent: "center", alignContent: "center" }}>
-              <button className="btn btn-primary">Submit</button>	
+          create({ variables: {session: values}});
+        }}
+      >
+        {() => (
+          <Form style={{ width: "100%", maxWidth: 500 }}>
+            <h3 className="h3 mb-3 font-weight-normal">Submit a Session!</h3>
+            <div className="mb-3" style={{ paddingBottom: 5 }}>
+              <label htmlFor="inputTitle">Title</label>
+              <Field
+                id="inputTitle"
+                className="form-control"
+                required
+                autoFocus
+                name="title"
+              />
             </div>
-          </Form>	
-        )}	
-      </Formik>	
-    </div>	
-  );	
+            <div className="mb-3" style={{ paddingBottom: 5 }}>
+              <label htmlFor="inputDescription">Description</label>
+              <Field
+                type="textarea"
+                id="inputDescription"
+                className="form-control"
+                required
+                name="description"
+              />
+            </div>
+            <div className="mb-3" style={{ paddingBottom: 5 }}>
+              <label htmlFor="inputDay">Day</label>
+              <Field
+                name="day"
+                id="inputDay"
+                className="form-control"
+                required
+              />
+            </div>
+            <div className="mb-3" style={{ paddingBottom: 5 }}>
+              <label htmlFor="inputLevel">Level</label>
+              <Field
+                name="level"
+                id="inputLevel"
+                className="form-control"
+                required
+              />
+            </div>
+            <div style={{ justifyContent: "center", alignContent: "center" }}>
+              <button className="btn btn-primary">Submit</button>
+            </div>
+          </Form>
+        )}
+      </Formik>
+    </div>
+  );
 }
 
-export function AddSession() {	
-  return (	
-    <>	
-      <section className="banner">	
-        <div className="container">	
-          <div className="row">	
-            <SessionForm />	
-          </div>	
-        </div>	
-      </section>	
-    </>	
-  );	
+export function AddSession() {
+  return (
+    <>
+      <section className="banner">
+        <div className="container">
+          <div className="row">
+            <SessionForm />
+          </div>
+        </div>
+      </section>
+    </>
+  );
 }

@@ -3630,6 +3630,20 @@
       "level": "Intermediate",
       "day": "Thursday",
       "id": "814b1f5e-e6df-440b-a91c-df198b5bbed2"
+    },
+    {
+      "title": "My new session",
+      "description": "This is a great session",
+      "level": "Intermediate",
+      "day": "Friday",
+      "id": "d19caf4a-2439-424f-b2a7-2a84df6633b3"
+    },
+    {
+      "title": "Another new session",
+      "description": "This one is legit",
+      "level": "Intermediate",
+      "day": "Wednesday",
+      "id": "c1b2b05e-56a8-4f3c-8c8c-1971a86704fe"
     }
   ]
 }
